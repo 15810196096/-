@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>成本测算模型（按实际成本）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 24px;
+    color: #2c3e50;
+    font-size: 14px;
+  }
+  .container { max-width: 1280px; margin: 0 auto; }
+  header { text-align: center; color: #fff; margin-bottom: 24px; }
+  header h1 { font-size: 28px; margin-bottom: 8px; }
+  header p { opacity: 0.9; font-size: 14px; }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  }
+  .card h2 {
+    color: #2c3e50;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #f0f2f5;
+    font-size: 17px;
+  }
+  .input-row { display: grid; gap: 14px; }
+  .input-row.cols3 { grid-template-columns: repeat(3, 1fr); }
+  .input-row.cols2 { grid-template-columns: repeat(2, 1fr); }
+  .input-group label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .input-group input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #e0e6ed;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .input-group input:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102,126,234,0.15);
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin: 16px 0 8px;
+    padding-left: 6px;
+    border-left: 3px solid #667eea;
+  }
+  .grid { display: grid; gap: 20px; }
+  .grid.cols2 { grid-template-columns: 1fr 1fr; }
+  .scenario-card {
+    border: 1px solid #e8ecf1;
+    border-radius: 10px;
+    padding: 18px;
+    background: #fafbfc;
+  }
+  .scenario-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 12px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid #eef0f3; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: #f4f6f9; font-weight: 600; color: #555; font-size: 12px; }
+  tr.total { background: #fff8e1; font-weight: 600; }
+  tr.total td { border-top: 2px solid #ffc107; border-bottom: 2px solid #ffc107; }
+  .summary-box {
+    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+    padding: 16px 20px;
+    border-radius: 10px;
+    margin: 12px 0;
+  }
+  .summary-grid { display: grid; gap: 12px; }
+  .summary-grid.cols4 { grid-template-columns: repeat(4, 1fr); }
+  .summary-item { text-align: center; }
+  .summary-item .num { font-size: 20px; font-weight: 700; color: #d35400; }
+  .summary-item .lbl { font-size: 11px; color: #7d4f00; margin-top: 2px; }
+  .note { font-size: 11px; color: #888; font-style: italic; margin-top: 4px; }
+  .alert {
+    background: #fff8e1;
+    border-left: 4px solid #ffc107;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+  .alert.info { background: #e3f2fd; border-left-color: #2196f3; }
+  .alert.success { background: #e8f5e9; border-left-color: #4caf50; }
+  .alert.danger { background: #ffebee; border-left-color: #f44336; }
+  .chart-wrap { position: relative; width: 100%; height: 360px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; font-size: 12px; color: #555; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>成本测算模型（按实际成本）</h1>
+    <p>云资源成本基准 4.37856096 元/万张 · R&amp;D 第一年投入，分摊 <span id="rdYearsHeader">3</span> 年</p>
+  </header>
+
+  <div class="card">
+    <h2>核心参数（可调）</h2>
+
+    <div class="section-title">基础成本参数</div>
+    <div class="input-row cols3">
+      <div class="input-group">
+        <label>云成本基准（元/万张）</label>
+        <input type="number" id="cloudUnit" value="4.37856096" step="0.01" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>商户总数（个）</label>
+        <input type="number" id="stationCount" value="10000" step="100" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>年营业天数</label>
+        <input type="number" id="daysYear" value="365" step="1" oninput="recalc()">
+      </div>
+    </div>
+
+    <div class="section-title">研发参数</div>
+    <div class="input-row cols3">
+      <div class="input-group">
+        <label>研发总投入（元）</label>
+        <input type="number" id="rdTotal" value="500000" step="10000" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>研发分摊年数</label>
+        <input type="number" id="rdYears" value="3" step="1" min="1" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>&nbsp;</label>
+        <div style="padding: 8px 10px; background: #f4f6f9; border-radius: 6px; font-size: 13px;">
+          单站年分摊: <strong id="rdPerStation">-</strong> 元
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">运维参数</div>
+    <div class="input-row cols3">
+      <div class="input-group">
+        <label>运维·固定（元/商户/年）</label>
+        <input type="number" id="opsFixed" value="3" step="0.5" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>运维·变动（云成本×%）</label>
+        <input type="number" id="opsVar" value="10" step="1" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>&nbsp;</label>
+        <div style="padding: 8px 10px; background: #f4f6f9; border-radius: 6px; font-size: 13px;">
+          单张发票云成本: <strong id="cloudPerInvoice">-</strong> 元
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">推广参数</div>
+    <div class="input-row cols2">
+      <div class="input-group">
+        <label>推广·CAC（元/商户，一次性，仅第 1 年）</label>
+        <input type="number" id="promoCAC" value="5" step="1" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>推广·持续（元/商户/年）</label>
+        <input type="number" id="promoOngoing" value="3" step="0.5" oninput="recalc()">
+      </div>
+    </div>
+
+    <div class="section-title">测算场景（日开票量）</div>
+    <div class="input-row cols3">
+      <div class="input-group">
+        <label>场景 1 日开票量（张/日）</label>
+        <input type="number" id="vol1" value="150" step="10" min="1" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>场景 2 日开票量（张/日）</label>
+        <input type="number" id="vol2" value="300" step="10" min="1" oninput="recalc()">
+      </div>
+      <div class="input-group">
+        <label>场景 3 日开票量（张/日，0 表示不显示）</label>
+        <input type="number" id="vol3" value="0" step="10" min="0" oninput="recalc()">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>测算结果</h2>
+    <div class="grid cols2" id="scenarios"></div>
+  </div>
+
+  <div class="card">
+    <h2>成本结构可视化</h2>
+    <div class="legend">
+      <span><span class="dot" style="background: #378add;"></span>云资源</span>
+      <span><span class="dot" style="background: #d85a30;"></span>运维</span>
+      <span><span class="dot" style="background: #ba7517;"></span>推广</span>
+      <span><span class="dot" style="background: #7f77dd;"></span>研发分摊</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="multiYearChart" role="img" aria-label="多年成本结构堆叠柱状图"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>关键洞察</h2>
+    <div id="insights"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+let chartInstance = null;
+
+function fmt(n, dec=2) {
+  if (n === null || n === undefined || isNaN(n)) return '-';
+  if (Math.abs(n) < 0.01 && n !== 0) return n.toExponential(2);
+  return n.toFixed(dec);
+}
+
+function recalc() {
+  const cloudUnit = parseFloat(document.getElementById('cloudUnit').value);
+  const stationCount = parseFloat(document.getElementById('stationCount').value);
+  const daysYear = parseFloat(document.getElementById('daysYear').value);
+  const rdTotal = parseFloat(document.getElementById('rdTotal').value);
+  const rdYears = parseInt(document.getElementById('rdYears').value);
+  const opsFixed = parseFloat(document.getElementById('opsFixed').value);
+  const opsVar = parseFloat(document.getElementById('opsVar').value) / 100;
+  const promoCAC = parseFloat(document.getElementById('promoCAC').value);
+  const promoOngoing = parseFloat(document.getElementById('promoOngoing').value);
+  const vol1 = parseFloat(document.getElementById('vol1').value) || 0;
+  const vol2 = parseFloat(document.getElementById('vol2').value) || 0;
+  const vol3 = parseFloat(document.getElementById('vol3').value) || 0;
+
+  const cloudPerInvoice = cloudUnit / 10000;
+  const rdPerStationYear = rdTotal / stationCount / rdYears;
+
+  document.getElementById('cloudPerInvoice').textContent = cloudPerInvoice.toExponential(4);
+  document.getElementById('rdPerStation').textContent = fmt(rdPerStationYear);
+  document.getElementById('rdYearsHeader').textContent = rdYears;
+
+  function calcScenario(dailyInvoices) {
+    if (dailyInvoices <= 0) return null;
+    const annualInvoices = dailyInvoices * daysYear;
+    const cloudCost = annualInvoices * cloudPerInvoice;
+    const opsVarAmount = cloudCost * opsVar;
+    const opsTotal = opsFixed + opsVarAmount;
+
+    const years = [];
+    let cumulative = 0;
+    for (let y = 1; y <= rdYears; y++) {
+      const promo = (y === 1) ? (promoCAC + promoOngoing) : promoOngoing;
+      const rd = rdPerStationYear;
+      const total = cloudCost + opsTotal + promo + rd;
+      years.push({ year: y, cloud: cloudCost, ops: opsTotal, promo, rd, total });
+      cumulative += total;
+    }
+    const steadyState = {
+      cloud: cloudCost,
+      ops: opsTotal,
+      promo: promoOngoing,
+      rd: 0,
+      total: cloudCost + opsTotal + promoOngoing
+    };
+
+    return { dailyInvoices, annualInvoices, years, cumulative, steadyState };
+  }
+
+  function renderScenario(s) {
+    const yCount = s.years.length;
+
+    let headers = '<th>成本项</th>';
+    s.years.forEach(y => { headers += `<th>第${y.year}年</th>`; });
+    headers += `<th>稳态<br>(第${yCount+1}年+)</th>`;
+    if (yCount === 3) headers += '<th>3年累计</th>';
+
+    function row(name, getter, sum) {
+      let r = `<tr><td>${name}</td>`;
+      s.years.forEach(y => { r += `<td>${fmt(getter(y))}</td>`; });
+      r += `<td>${fmt(getter(s.steadyState))}</td>`;
+      if (yCount === 3) r += `<td>${fmt(sum)}</td>`;
+      return r + '</tr>';
+    }
+
+    const tableRows =
+      row('云资源', y => y.cloud, s.years.reduce((a, y) => a + y.cloud, 0)) +
+      row('运维', y => y.ops, s.years.reduce((a, y) => a + y.ops, 0)) +
+      row('推广', y => y.promo, s.years.reduce((a, y) => a + y.promo, 0)) +
+      row('研发分摊', y => y.rd, s.years.reduce((a, y) => a + y.rd, 0)) +
+      (() => {
+        let r = '<tr class="total"><td>合计</td>';
+        s.years.forEach(y => { r += `<td>${fmt(y.total)}</td>`; });
+        r += `<td>${fmt(s.steadyState.total)}</td>`;
+        if (yCount === 3) r += `<td>${fmt(s.cumulative)}</td>`;
+        return r + '</tr>';
+      })();
+
+    return `
+      <div class="scenario-card">
+        <div class="scenario-title">${s.dailyInvoices} 张发票/日</div>
+        <div class="summary-box">
+          <div class="summary-grid cols4">
+            <div class="summary-item"><div class="num">${s.annualInvoices.toLocaleString()}</div><div class="lbl">年开票量（张）</div></div>
+            <div class="summary-item"><div class="num">${fmt(s.years[0].total)}</div><div class="lbl">第1年合计（元）</div></div>
+            <div class="summary-item"><div class="num">${fmt(s.steadyState.total)}</div><div class="lbl">稳态成本（元）</div></div>
+            <div class="summary-item"><div class="num">${yCount === 3 ? fmt(s.cumulative) : '-'}</div><div class="lbl">${yCount}年累计（元）</div></div>
+          </div>
+        </div>
+        <table>
+          <tr>${headers}</tr>
+          ${tableRows}
+        </table>
+      </div>
+    `;
+  }
+
+  const scenarios = [calcScenario(vol1), calcScenario(vol2), calcScenario(vol3)].filter(s => s !== null);
+
+  // 渲染场景
+  const scenariosHtml = scenarios.map(renderScenario).join('');
+  const scenariosEl = document.getElementById('scenarios');
+  scenariosEl.innerHTML = scenariosHtml;
+  // 调整 grid 列数
+  if (scenarios.length === 1) scenariosEl.style.gridTemplateColumns = '1fr';
+  else if (scenarios.length === 2) scenariosEl.style.gridTemplateColumns = '1fr 1fr';
+  else scenariosEl.style.gridTemplateColumns = '1fr 1fr 1fr';
+
+  // 更新图表
+  updateChart(scenarios);
+
+  // Insights
+  const insights = [];
+  insights.push(`<div class="alert info">R&amp;D 分摊机制：研发投入发生在第 1 年，按 <strong>${rdYears} 年</strong> 平均分摊到商户成本，第 1～${rdYears} 年每年计 <strong>${fmt(rdPerStationYear)} 元/商户</strong>，第 ${rdYears+1} 年起归零。CAC 仅在第 1 年发生。</div>`);
+
+  if (scenarios.length > 0) {
+    const summaryItems = scenarios.map(s => {
+      return `<strong>${s.dailyInvoices}张/日</strong> 稳态 <strong>${fmt(s.steadyState.total)} 元/商户/年</strong>`;
+    }).join('，');
+    insights.push(`<div class="alert info">稳态成本：${summaryItems}</div>`);
+  }
+
+  if (scenarios.length >= 2) {
+    const sorted = [...scenarios].sort((a, b) => a.steadyState.total - b.steadyState.total);
+    const cheapest = sorted[0];
+    const mostExpensive = sorted[sorted.length - 1];
+    const diff = mostExpensive.steadyState.total - cheapest.steadyState.total;
+    insights.push(`<div class="alert success">稳态成本极差：${fmt(diff)} 元/商户/年（${cheapest.dailyInvoices}张/日 → ${mostExpensive.dailyInvoices}张/日）</div>`);
+  }
+
+  // 3年累计 vs 稳态
+  if (rdYears === 3) {
+    const items3y = scenarios.map(s => {
+      const avg = s.cumulative / 3;
+      return `<strong>${s.dailyInvoices}张/日</strong> 3年累计 ${fmt(s.cumulative)} 元，年均 ${fmt(avg)} 元`;
+    }).join('；');
+    insights.push(`<div class="alert success">3年累计与年均：${items3y}</div>`);
+  }
+
+  document.getElementById('insights').innerHTML = insights.join('');
+}
+
+function updateChart(scenarios) {
+  if (!scenarios.length) return;
+  const labels = [];
+  const cloud = [], ops = [], promo = [], rd = [];
+  scenarios.forEach(s => {
+    s.years.forEach(y => {
+      labels.push(`${s.dailyInvoices}张/日·第${y.year}年`);
+      cloud.push(y.cloud);
+      ops.push(y.ops);
+      promo.push(y.promo);
+      rd.push(y.rd);
+    });
+    labels.push(`${s.dailyInvoices}张/日·稳态`);
+    cloud.push(s.steadyState.cloud);
+    ops.push(s.steadyState.ops);
+    promo.push(s.steadyState.promo);
+    rd.push(0);
+  });
+
+  const ctx = document.getElementById('multiYearChart').getContext('2d');
+  const data = {
+    labels,
+    datasets: [
+      { label: '云资源', data: cloud, backgroundColor: '#378add', stack: 's' },
+      { label: '运维', data: ops, backgroundColor: '#d85a30', stack: 's' },
+      { label: '推广', data: promo, backgroundColor: '#ba7517', stack: 's' },
+      { label: '研发', data: rd, backgroundColor: '#7f77dd', stack: 's' }
+    ]
+  };
+  const options = {
+    indexAxis: 'x',
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    scales: {
+      x: { stacked: true, ticks: { font: { size: 10 }, autoSkip: false, maxRotation: 30 }, grid: { display: false } },
+      y: {
+        stacked: true,
+        beginAtZero: true,
+        ticks: { font: { size: 11 }, callback: v => v + '元' },
+        grid: { color: 'rgba(0,0,0,0.05)' }
+      }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}元`,
+          footer: (items) => {
+            const i = items[0].dataIndex;
+            const total = cloud[i] + ops[i] + promo[i] + rd[i];
+            return '合计: ' + total.toFixed(2) + '元';
+          }
+        }
+      }
+    }
+  };
+
+  if (chartInstance) {
+    chartInstance.data = data;
+    chartInstance.options = options;
+    chartInstance.update();
+  } else {
+    chartInstance = new Chart(ctx, { type: 'bar', data, options });
+  }
+}
+
+recalc();
+</script>
+</body>
+</html>
